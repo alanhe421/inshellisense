@@ -4,6 +4,7 @@
 import log from "../utils/log.js";
 import { runTemplates } from "./template.js";
 import { buildExecuteShellCommand } from "./utils.js";
+import { Shell } from '../utils/shell.js';
 
 const getGeneratorContext = (cwd: string): Fig.GeneratorContext => {
   return {
@@ -17,7 +18,7 @@ const getGeneratorContext = (cwd: string): Fig.GeneratorContext => {
 };
 
 // TODO: add support for caching, trigger, & getQueryTerm
-export const runGenerator = async (generator: Fig.Generator, tokens: string[], cwd: string): Promise<Fig.Suggestion[]> => {
+export const runGenerator = async (generator: Fig.Generator, tokens: string[], cwd: string, shell: Shell): Promise<Fig.Suggestion[]> => {
   // TODO: support trigger
   const { script, postProcess, scriptTimeout, splitOn, custom, template, filterTemplateSuggestions } = generator;
 
@@ -42,7 +43,7 @@ export const runGenerator = async (generator: Fig.Generator, tokens: string[], c
     }
 
     if (template != null) {
-      const templateSuggestions = await runTemplates(template, cwd);
+      const templateSuggestions = await runTemplates(template, cwd, shell);
       if (filterTemplateSuggestions) {
         suggestions.push(...filterTemplateSuggestions(templateSuggestions));
       } else {

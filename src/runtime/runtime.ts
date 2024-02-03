@@ -75,7 +75,7 @@ export const getSuggestions = async (cmd: string, cwd: string, shell: Shell): Pr
     lastCommand.isPath = true;
     lastCommand.isPathComplete = pathyComplete;
   }
-  const result = await runSubcommand(activeCmd.slice(1), subcommand, resolvedCwd);
+  const result = await runSubcommand(activeCmd.slice(1), subcommand, resolvedCwd,shell);
   if (result == null) return;
 
   let charactersToDrop = lastCommand?.complete ? 0 : lastCommand?.token.length ?? 0;
@@ -176,6 +176,7 @@ const runOption = async (
   cwd: string,
   persistentOptions: Fig.Option[],
   acceptedTokens: CommandToken[],
+  shell: Shell,
 ): Promise<SuggestionBlob | undefined> => {
   if (tokens.length === 0) {
     throw new Error("invalid state reached, option expected but no tokens found");
@@ -184,74 +185,28 @@ const runOption = async (
   const isPersistent = persistentOptions.some((o) => (typeof o.name === "string" ? o.name === activeToken.token : o.name.includes(activeToken.token)));
   if ((option.args instanceof Array && option.args.length > 0) || option.args != null) {
     const args = option.args instanceof Array ? option.args : [option.args];
-    return runArg(tokens.slice(1), args, subcommand, cwd, persistentOptions, acceptedTokens.concat(activeToken), true, false);
+    return runArg(tokens.slice(1), args, subcommand, cwd, persistentOptions, acceptedTokens.concat(activeToken), true, false, shell);
   }
-  return runSubcommand(tokens.slice(1), subcommand, cwd, persistentOptions, acceptedTokens.concat({ ...activeToken, isPersistent }));
-};
-
-const runArg = async (
-  tokens: CommandToken[],
-  args: Fig.Arg[],
-  subcommand: Fig.Subcommand,
-  cwd: string,
-  persistentOptions: Fig.Option[],
-  acceptedTokens: CommandToken[],
-  fromOption: boolean,
-  fromVariadic: boolean,
-): Promise<SuggestionBlob | undefined> => {
-  if (args.length === 0) {
-    return runSubcommand(tokens, subcommand, cwd, persistentOptions, acceptedTokens, true, !fromOption);
-  } else if (tokens.length === 0) {
-    return await getArgDrivenRecommendation(args, subcommand, persistentOptions, undefined, acceptedTokens, fromVariadic, cwd);
-  } else if (!tokens.at(0)?.complete) {
-    return await getArgDrivenRecommendation(args, subcommand, persistentOptions, tokens[0], acceptedTokens, fromVariadic, cwd);
-  }
-
-  const activeToken = tokens[0];
-  if (args.every((a) => a.isOptional)) {
-    if (activeToken.isOption) {
-      const option = getOption(activeToken, persistentOptions.concat(subcommand.options ?? []));
-      if (option != null) {
-        return runOption(tokens, option, subcommand, cwd, persistentOptions, acceptedTokens);
-      }
-      return;
-    }
-
-    const nextSubcommand = await genSubcommand(activeToken.token, subcommand);
-    if (nextSubcommand != null) {
-      return runSubcommand(tokens.slice(1), nextSubcommand, cwd, persistentOptions, getPersistentTokens(acceptedTokens.concat(activeToken)));
-    }
-  }
-
-  const activeArg = args[0];
-  if (activeArg.isVariadic) {
-    return runArg(tokens.slice(1), args, subcommand, cwd, persistentOptions, acceptedTokens.concat(activeToken), fromOption, true);
-  } else if (activeArg.isCommand) {
-    if (tokens.length <= 0) {
-      return;
-    }
-    const spec = await loadSpec(tokens);
-    if (spec == null) return;
-    const subcommand = getSubcommand(spec);
-    if (subcommand == null) return;
-    return runSubcommand(tokens.slice(1), subcommand, cwd);
-  }
-  return runArg(tokens.slice(1), args.slice(1), subcommand, cwd, persistentOptions, acceptedTokens.concat(activeToken), fromOption, false);
+  return runSubcommand(tokens.slice(1), subcommand, cwd, shell, persistentOptions, acceptedTokens.concat({
+    ...activeToken,
+    isPersistent,
+  }));
 };
 
 const runSubcommand = async (
   tokens: CommandToken[],
   subcommand: Fig.Subcommand,
   cwd: string,
+  shell:Shell,
   persistentOptions: Fig.Option[] = [],
   acceptedTokens: CommandToken[] = [],
   argsDepleted = false,
   argsUsed = false,
 ): Promise<SuggestionBlob | undefined> => {
   if (tokens.length === 0) {
-    return getSubcommandDrivenRecommendation(subcommand, persistentOptions, undefined, argsDepleted, argsUsed, acceptedTokens, cwd);
+    return getSubcommandDrivenRecommendation(subcommand, persistentOptions, undefined, argsDepleted, argsUsed, acceptedTokens, cwd,shell);
   } else if (!tokens.at(0)?.complete) {
-    return getSubcommandDrivenRecommendation(subcommand, persistentOptions, tokens[0], argsDepleted, argsUsed, acceptedTokens, cwd);
+    return getSubcommandDrivenRecommendation(subcommand, persistentOptions, tokens[0], argsDepleted, argsUsed, acceptedTokens, cwd,shell);
   }
 
   const activeToken = tokens[0];
@@ -261,7 +216,7 @@ const runSubcommand = async (
   if (activeToken.isOption) {
     const option = getOption(activeToken, allOptions);
     if (option != null) {
-      return runOption(tokens, option, subcommand, cwd, persistentOptions, acceptedTokens);
+      return runOption(tokens, option, subcommand, cwd, persistentOptions, acceptedTokens,shell);
     }
     return;
   }
@@ -272,6 +227,7 @@ const runSubcommand = async (
       tokens.slice(1),
       nextSubcommand,
       cwd,
+      shell,
       getPersistentOptions(persistentOptions, subcommand.options),
       getPersistentTokens(acceptedTokens.concat(activeToken)),
     );
@@ -283,8 +239,59 @@ const runSubcommand = async (
 
   const args = getArgs(subcommand.args);
   if (args.length != 0) {
-    return runArg(tokens, args, subcommand, cwd, allOptions, acceptedTokens, false, false);
+    return runArg(tokens, args, subcommand, cwd, allOptions, acceptedTokens, false, false,shell);
   }
   // if the subcommand has no args specified, fallback to the subcommand and ignore this item
-  return runSubcommand(tokens.slice(1), subcommand, cwd, persistentOptions, acceptedTokens.concat(activeToken));
+  return runSubcommand(tokens.slice(1), subcommand, cwd,shell, persistentOptions, acceptedTokens.concat(activeToken));
+};
+
+const runArg = async (
+  tokens: CommandToken[],
+  args: Fig.Arg[],
+  subcommand: Fig.Subcommand,
+  cwd: string,
+  persistentOptions: Fig.Option[],
+  acceptedTokens: CommandToken[],
+  fromOption: boolean,
+  fromVariadic: boolean,
+  shell:Shell,
+): Promise<SuggestionBlob | undefined> => {
+  if (args.length === 0) {
+    return runSubcommand(tokens, subcommand, cwd, shell,persistentOptions, acceptedTokens, true, !fromOption);
+  } else if (tokens.length === 0) {
+    return await getArgDrivenRecommendation(args, subcommand, persistentOptions, undefined, acceptedTokens, fromVariadic, cwd,shell);
+  } else if (!tokens.at(0)?.complete) {
+    return await getArgDrivenRecommendation(args, subcommand, persistentOptions, tokens[0], acceptedTokens, fromVariadic, cwd,shell);
+  }
+
+  const activeToken = tokens[0];
+  if (args.every((a) => a.isOptional)) {
+    if (activeToken.isOption) {
+      const option = getOption(activeToken, persistentOptions.concat(subcommand.options ?? []));
+      if (option != null) {
+        return runOption(tokens, option, subcommand, cwd, persistentOptions, acceptedTokens,shell);
+      }
+      return;
+    }
+
+    const nextSubcommand = await genSubcommand(activeToken.token, subcommand);
+    if (nextSubcommand != null) {
+      return runSubcommand(tokens.slice(1), nextSubcommand, cwd,shell, persistentOptions, getPersistentTokens(acceptedTokens.concat(activeToken)));
+    }
+  }
+
+  const activeArg = args[0];
+  if (activeArg.isVariadic) {
+    return runArg(tokens.slice(1), args, subcommand, cwd, persistentOptions, acceptedTokens.concat(activeToken), fromOption, true,shell);
+  } else if (activeArg.isCommand) {
+    if (tokens.length <= 0) {
+      return;
+    }
+    const spec = await loadSpec(tokens);
+    if (spec == null) return;
+    const subcommand = getSubcommand(spec);
+    if (subcommand == null) return;
+    return runSubcommand(tokens.slice(1), subcommand, cwd,shell);
+  }
+  return runArg(tokens.slice(1), args.slice(1), subcommand, cwd, persistentOptions, acceptedTokens.concat(activeToken), fromOption, false,shell);
 };

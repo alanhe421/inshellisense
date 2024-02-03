@@ -7,6 +7,7 @@ import { CommandToken } from "./parser.js";
 import { runGenerator } from "./generator.js";
 import { runTemplates } from "./template.js";
 import { Suggestion, SuggestionBlob } from "./model.js";
+import { Shell } from '../utils/shell.js';
 
 enum SuggestionIcons {
   File = "📄",
@@ -136,10 +137,11 @@ const generatorSuggestions = async (
   filterStrategy: FilterStrategy | undefined,
   partialCmd: string | undefined,
   cwd: string,
+  shell:Shell,
 ): Promise<Suggestion[]> => {
   const generators = generator instanceof Array ? generator : generator ? [generator] : [];
   const tokens = acceptedTokens.map((t) => t.token);
-  const suggestions = (await Promise.all(generators.map((gen) => runGenerator(gen, tokens, cwd)))).flat();
+  const suggestions = (await Promise.all(generators.map((gen) => runGenerator(gen, tokens, cwd,shell)))).flat();
   return filter<Fig.Suggestion>(suggestions, filterStrategy, partialCmd, undefined);
 };
 
@@ -148,8 +150,9 @@ const templateSuggestions = async (
   filterStrategy: FilterStrategy | undefined,
   partialCmd: string | undefined,
   cwd: string,
+  shell:Shell,
 ): Promise<Suggestion[]> => {
-  return filter<Fig.Suggestion>(await runTemplates(templates ?? [], cwd), filterStrategy, partialCmd, undefined);
+  return filter<Fig.Suggestion>(await runTemplates(templates ?? [], cwd,shell), filterStrategy, partialCmd, undefined);
 };
 
 const suggestionSuggestions = (
@@ -208,6 +211,7 @@ export const getSubcommandDrivenRecommendation = async (
   argsFromSubcommand: boolean,
   acceptedTokens: CommandToken[],
   cwd: string,
+  shell:Shell,
 ): Promise<SuggestionBlob | undefined> => {
   if (argsDepleted && argsFromSubcommand) {
     return;
@@ -227,9 +231,9 @@ export const getSubcommandDrivenRecommendation = async (
   }
   if (argLength != 0) {
     const activeArg = subcommand.args instanceof Array ? subcommand.args[0] : subcommand.args;
-    suggestions.push(...(await generatorSuggestions(activeArg?.generators, acceptedTokens, activeArg?.filterStrategy, partialCmd, cwd)));
+    suggestions.push(...(await generatorSuggestions(activeArg?.generators, acceptedTokens, activeArg?.filterStrategy, partialCmd, cwd,shell)));
     suggestions.push(...suggestionSuggestions(activeArg?.suggestions, activeArg?.filterStrategy, partialCmd));
-    suggestions.push(...(await templateSuggestions(activeArg?.template, activeArg?.filterStrategy, partialCmd, cwd)));
+    suggestions.push(...(await templateSuggestions(activeArg?.template, activeArg?.filterStrategy, partialCmd, cwd, shell)));
   }
 
   return {
@@ -252,6 +256,7 @@ export const getArgDrivenRecommendation = async (
   acceptedTokens: CommandToken[],
   variadicArgBound: boolean,
   cwd: string,
+  shell:Shell,
 ): Promise<SuggestionBlob | undefined> => {
   let partialCmd = partialToken?.token;
   if (partialToken?.isPath) {
@@ -261,9 +266,9 @@ export const getArgDrivenRecommendation = async (
   const activeArg = args[0];
   const allOptions = persistentOptions.concat(subcommand.options ?? []);
   const suggestions = [
-    ...(await generatorSuggestions(args[0].generators, acceptedTokens, activeArg?.filterStrategy, partialCmd, cwd)),
+    ...(await generatorSuggestions(args[0].generators, acceptedTokens, activeArg?.filterStrategy, partialCmd, cwd, shell)),
     ...suggestionSuggestions(args[0].suggestions, activeArg?.filterStrategy, partialCmd),
-    ...(await templateSuggestions(args[0].template, activeArg?.filterStrategy, partialCmd, cwd)),
+    ...(await templateSuggestions(args[0].template, activeArg?.filterStrategy, partialCmd, cwd, shell)),
   ];
 
   if (activeArg.isOptional || (activeArg.isVariadic && variadicArgBound)) {
