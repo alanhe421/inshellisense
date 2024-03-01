@@ -61,7 +61,7 @@ const toSuggestion = (suggestion: Fig.Suggestion, name?: string, type?: Fig.Sugg
 export function appendEnterToFolderSuggestions( suggestions: Suggestion[], partialCmd: string | undefined) {
   suggestions.push({
     allNames: [],
-    insertValue: partialCmd + "\r",
+    insertValue: "\r",
     name: "↩",
     description: "Enter the current directory",
     icon: SuggestionIcons.Default,
