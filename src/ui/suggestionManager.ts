@@ -153,7 +153,8 @@ export class SuggestionManager {
       const removals = "\u007F".repeat(this.#suggestBlob?.charactersToDrop ?? 0);
       const suggestion = this.#suggestBlob?.suggestions.at(this.#activeSuggestionIdx);
       const chars = suggestion?.insertValue ?? suggestion?.name + " ";
-      if (this.#suggestBlob == null || !chars.trim() || this.#suggestBlob?.suggestions.length == 0) {
+      const trimmedChars = chars.replace(/^\s+|\s+$/g, '');
+      if (this.#suggestBlob == null || !trimmedChars || this.#suggestBlob?.suggestions.length == 0) {
         return false;
       }
       this.#term.write(removals + chars);

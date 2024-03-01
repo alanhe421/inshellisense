@@ -58,14 +58,34 @@ const toSuggestion = (suggestion: Fig.Suggestion, name?: string, type?: Fig.Sugg
   };
 };
 
-function filter<T extends Fig.BaseSuggestion & { name?: Fig.SingleOrArray<string>; type?: Fig.SuggestionType | undefined }>(
-  suggestions: T[],
-  filterStrategy: FilterStrategy | undefined,
-  partialCmd: string | undefined,
-  suggestionType: Fig.SuggestionType | undefined,
-): Suggestion[] {
-  if (!partialCmd) return suggestions.map((s) => toSuggestion(s, undefined, suggestionType)).filter((s) => s != null) as Suggestion[];
+export function appendEnterToFolderSuggestions( suggestions: Suggestion[], partialCmd: string | undefined) {
+  suggestions.push({
+    allNames: [],
+    insertValue: partialCmd + "\r",
+    name: "↩",
+    description: "Enter the current directory",
+    icon: SuggestionIcons.Default,
+    priority: 100
+  });
+}
 
+function filter<T extends Fig.BaseSuggestion & {
+  name?: Fig.SingleOrArray<string>;
+  type?: Fig.SuggestionType | undefined
+}>(
+    suggestions: T[],
+    filterStrategy: FilterStrategy | undefined,
+    partialCmd: string | undefined,
+    suggestionType: Fig.SuggestionType | undefined,
+    partialToken?: CommandToken | undefined,
+): Suggestion[] {
+  if (!partialCmd) {
+    const suggestionConverted = suggestions.map((s) => toSuggestion(s, undefined, suggestionType)) as Suggestion[];
+    if (suggestions.some(item => item.type === 'folder') && partialToken?.isPathComplete) {
+      appendEnterToFolderSuggestions(suggestionConverted, partialCmd);
+    }
+    return suggestionConverted.filter((s) => s != null) as Suggestion[];
+  }
   switch (filterStrategy) {
     case "fuzzy":
       return suggestions
@@ -136,11 +156,12 @@ const generatorSuggestions = async (
   filterStrategy: FilterStrategy | undefined,
   partialCmd: string | undefined,
   cwd: string,
+  partialToken: CommandToken | undefined,
 ): Promise<Suggestion[]> => {
   const generators = generator instanceof Array ? generator : generator ? [generator] : [];
   const tokens = acceptedTokens.map((t) => t.token);
   const suggestions = (await Promise.all(generators.map((gen) => runGenerator(gen, tokens, cwd)))).flat();
-  return filter<Fig.Suggestion>(suggestions, filterStrategy, partialCmd, undefined);
+  return filter<Fig.Suggestion>(suggestions, filterStrategy, partialCmd, undefined, partialToken);
 };
 
 const templateSuggestions = async (
@@ -227,7 +248,7 @@ export const getSubcommandDrivenRecommendation = async (
   }
   if (argLength != 0) {
     const activeArg = subcommand.args instanceof Array ? subcommand.args[0] : subcommand.args;
-    suggestions.push(...(await generatorSuggestions(activeArg?.generators, acceptedTokens, activeArg?.filterStrategy, partialCmd, cwd)));
+    suggestions.push(...(await generatorSuggestions(activeArg?.generators, acceptedTokens, activeArg?.filterStrategy, partialCmd, cwd, partialToken)));
     suggestions.push(...suggestionSuggestions(activeArg?.suggestions, activeArg?.filterStrategy, partialCmd));
     suggestions.push(...(await templateSuggestions(activeArg?.template, activeArg?.filterStrategy, partialCmd, cwd)));
   }
@@ -261,7 +282,7 @@ export const getArgDrivenRecommendation = async (
   const activeArg = args[0];
   const allOptions = persistentOptions.concat(subcommand.options ?? []);
   const suggestions = [
-    ...(await generatorSuggestions(args[0].generators, acceptedTokens, activeArg?.filterStrategy, partialCmd, cwd)),
+    ...(await generatorSuggestions(args[0].generators, acceptedTokens, activeArg?.filterStrategy, partialCmd, cwd, partialToken)),
     ...suggestionSuggestions(args[0].suggestions, activeArg?.filterStrategy, partialCmd),
     ...(await templateSuggestions(args[0].template, activeArg?.filterStrategy, partialCmd, cwd)),
   ];
