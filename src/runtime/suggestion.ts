@@ -65,7 +65,7 @@ export function appendEnterToFolderSuggestions( suggestions: Suggestion[], parti
     name: "↩",
     description: "Enter the current directory",
     icon: SuggestionIcons.Default,
-    priority: 100
+    priority: Infinity
   });
 }
 
@@ -81,7 +81,9 @@ function filter<T extends Fig.BaseSuggestion & {
 ): Suggestion[] {
   if (!partialCmd) {
     const suggestionConverted = suggestions.map((s) => toSuggestion(s, undefined, suggestionType)) as Suggestion[];
-    if (suggestions.some(item => item.type === 'folder') && partialToken?.isPathComplete) {
+    // partialToken?.isPathComplete
+      // @ts-ignore
+    if (suggestions.some((item) => item.type === "folder" || item.context?.templateType === "folders")) {
       appendEnterToFolderSuggestions(suggestionConverted, partialCmd);
     }
     return suggestionConverted.filter((s) => s != null) as Suggestion[];
